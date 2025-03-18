@@ -1,5 +1,7 @@
 import * as ecs from '@8thwall/ecs'
 
+let deleteMode = false  // Track whether delete mode is active
+
 // List of components to clone
 const componentsForClone = [
   ecs.Position, ecs.Quaternion, ecs.Scale, ecs.Shadow, ecs.BoxGeometry, ecs.Material,
@@ -10,40 +12,151 @@ const componentsForClone = [
 
 // Function to update the text of the child entity
 const updateChildText = (parentEntityEid, world, newText) => {
-  const children = Array.from(world.getChildren(parentEntityEid))
-  if (children.length > 0) {
-    ecs.Ui.set(world, children[0], {
-      type: '3d',
-      text: newText,
-    })
+  try {
+    const children = Array.from(world.getChildren(parentEntityEid))
+    if (children.length > 0) {
+      ecs.Ui.set(world, children[0], {
+        type: '3d',
+        text: newText,
+        fontSize: 20,
+        borderWidth: 0.5,
+        borderColor: '000000',
+      })
+    } else {
+      console.warn('⚠️ No children found for entity:', parentEntityEid)
+    }
+  } catch (error) {
+    console.error('🚨 Error updating child text:', error)
   }
 }
 
 // Function to clone an entity and its children
 const cloneEntityWithChildren = (sourceEid, world) => {
-  const targetEid = world.createEntity()
-
-  // Clone components
-  componentsForClone.forEach((component) => {
-    if (component?.has(world, sourceEid)) {
-      const properties = component.get(world, sourceEid)
-      component.set(world, targetEid, {...properties})
+  try {
+    if (!ecs.Position.has(world, sourceEid)) {
+      console.error('❌ Source entity does not exist:', sourceEid)
+      return null
     }
-  })
 
-  // Enable the cloned entity if it was disabled
-  ecs.Disabled.remove(world, targetEid)
+    const targetEid = world.createEntity()
 
-  // Recursively clone child entities
-  const children = Array.from(world.getChildren(sourceEid))
-  children.forEach((childEid) => {
-    const newChildEid = cloneEntityWithChildren(childEid, world)
-    world.setParent(newChildEid, targetEid)
-  })
-  return targetEid
+    // Clone components
+    componentsForClone.forEach((component) => {
+      if (component?.has(world, sourceEid)) {
+        const properties = component.get(world, sourceEid)
+        component.set(world, targetEid, {...properties})
+      }
+    })
+
+    // Ensure the cloned entity has a collider for touch detection
+    ecs.Collider.set(world, targetEid, {type: 'box'})
+
+    // Enable the cloned entity if it was disabled
+    ecs.Disabled.remove(world, targetEid)
+
+    // Recursively clone child entities
+    const children = Array.from(world.getChildren(sourceEid))
+    children.forEach((childEid) => {
+      const newChildEid = cloneEntityWithChildren(childEid, world)
+      if (newChildEid) {
+        world.setParent(newChildEid, targetEid)
+      }
+    })
+    return targetEid
+  } catch (error) {
+    console.error('🚨 Error cloning entity:', error)
+    return null
+  }
 }
 
-// Register the 'Tap Place' component (for spawning Notes with text)
+// Function to create an input field for user text input
+const createTextInput = (callback) => {
+  try {
+    const input = document.createElement('input')
+    input.type = 'text'
+    input.placeholder = 'Enter your text...'
+    input.style.position = 'absolute'
+    input.style.bottom = '5%'
+    input.style.left = '50%'
+    input.style.transform = 'translate(-50%, -50%)'
+    input.style.padding = '10px'
+    input.style.fontSize = '16px'
+    input.style.border = '1px solid #ccc'
+    input.style.borderRadius = '5px'
+    input.style.zIndex = '1000'
+
+    document.body.appendChild(input)
+    input.focus()
+
+    input.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' && input.value.trim() !== '') {
+        console.log('📝 User entered text:', input.value.trim())
+        callback(input.value.trim())  // Send the input text back
+        document.body.removeChild(input)  // Remove the input box
+      }
+    })
+  } catch (error) {
+    console.error('🚨 Error creating text input:', error)
+  }
+}
+
+// Function to remove an entity
+const removeEntity = (entityEid, world) => {
+  try {
+    if (ecs.Position.has(world, entityEid)) {
+      world.deleteEntity(entityEid)
+      console.log(`🗑️ Removed entity: ${entityEid}`)
+    } else {
+      console.warn('⚠️ Tried to remove a non-existing entity:', entityEid)
+    }
+  } catch (error) {
+    console.error('🚨 Error removing entity:', error)
+  }
+}
+
+// Create the delete button in the top-left corner
+const createDeleteButton = () => {
+  const button = document.createElement('button')
+  button.innerText = 'Delete Mode: OFF'
+  button.style.position = 'absolute'
+  button.style.top = '10px'
+  button.style.left = '10px'
+  button.style.padding = '10px'
+  button.style.fontSize = '14px'
+  button.style.backgroundColor = 'red'
+  button.style.color = 'white'
+  button.style.border = 'none'
+  button.style.borderRadius = '5px'
+  button.style.cursor = 'pointer'
+  button.style.zIndex = '1000'
+
+  document.body.appendChild(button)
+
+  button.addEventListener('click', () => {
+    deleteMode = !deleteMode
+    button.innerText = `Delete Mode: ${deleteMode ? 'ON' : 'OFF'}`
+    button.style.backgroundColor = deleteMode ? 'darkred' : 'red'
+  })
+}
+
+createDeleteButton()  // Call this once at the start to create the button
+
+// 1) Register the custom component, store the return value in a variable
+const StickyNoteTapDelete = ecs.registerComponent({
+  name: 'StickyNoteTapDelete',
+  schema: {},
+  stateMachine: ({world, eid}) => {
+    ecs.defineState('default')
+      .initial()
+      .listen(eid, ecs.input.SCREEN_TOUCH_START, (e) => {
+        if (deleteMode) {
+          removeEntity(eid, world)
+        }
+      })
+  },
+})
+
+// Register the 'Tap Place' component (for spawning Notes with custom text)
 ecs.registerComponent({
   name: 'Tap Place',
   schema: {
@@ -64,43 +177,52 @@ ecs.registerComponent({
       .onEnter(() => {
         const {entityToSpawn} = schemaAttribute.get(eid)
         if (entityToSpawn) {
-          ecs.Disabled.set(world, entityToSpawn, {})  // Disable original entity
+          // Disable original entity so it's not visible/collidable
+          ecs.Disabled.set(world, entityToSpawn, {})
         }
       })
-      .listen(eid, ecs.input.SCREEN_TOUCH_START, (e) => {
-        const {entityToSpawn, minScale, maxScale} = schemaAttribute.get(eid)
-        const currentTime = Date.now()
+      .listen(eid, ecs.input.SCREEN_TOUCH_START, async (e) => {
+        try {
+          const {entityToSpawn} = schemaAttribute.get(eid)
+          const currentTime = Date.now()
 
-        // Prevent rapid consecutive interactions
-        if (currentTime - dataAttribute.get(eid).lastInteractionTime <= 500) {
-          return
-        }
+          // Prevent rapid consecutive interactions
+          if (currentTime - dataAttribute.get(eid).lastInteractionTime <= 500) {
+            return
+          }
+          dataAttribute.set(eid, {lastInteractionTime: currentTime})
 
-        dataAttribute.set(eid, {
-          lastInteractionTime: currentTime,
-        })
+          // DELETE MODE: Check for tapped entity and remove it
+          if (deleteMode) {
+            const tappedEntity = e.data.hit?.entity
+            if (tappedEntity) {
+              removeEntity(tappedEntity, world)
+            }
+            return
+          }
 
-        if (entityToSpawn) {
-          const newEntity = cloneEntityWithChildren(entityToSpawn, world)
+          // If delete mode is OFF, create a new note
+          if (entityToSpawn) {
+            createTextInput((userText) => {
+              console.log('📌 Creating new note with text:', userText)
+              const newEntity = cloneEntityWithChildren(entityToSpawn, world)
+              if (!newEntity) {
+                console.error('❌ Failed to clone entity')
+                return
+              }
 
-          // Set position and animation
-          ecs.Position.set(world, newEntity, e.data.worldPosition)
-          const randomScale = Math.random() * (maxScale - minScale) + minScale
-          ecs.ScaleAnimation.set(world, newEntity, {
-            fromX: 0,
-            fromY: 0,
-            fromZ: 0,
-            toX: randomScale,
-            toY: randomScale,
-            toZ: randomScale,
-            duration: 400,
-            loop: false,
-            easeOut: true,
-            easingFunction: 'Quadratic',
-          })
+              // Set position of the new entity
+              ecs.Position.set(world, newEntity, e.data.worldPosition)
 
-          // Update the text of the first child entity
-          updateChildText(newEntity, world, 'Hello!')
+              // Update the text of the first child entity with user input
+              updateChildText(newEntity, world, userText)
+
+              // 2) Use the variable `StickyNoteTapDelete` to attach the component
+              StickyNoteTapDelete.set(world, newEntity, {})
+            })
+          }
+        } catch (error) {
+          console.error('🚨 Error in screen tap event:', error)
         }
       })
   },
