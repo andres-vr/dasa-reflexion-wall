@@ -3,6 +3,17 @@ import * as ecs from '@8thwall/ecs'
 let deleteMode = false  // Track whether delete mode is active
 let likeMode = false
 
+// Register the LikeCounter component
+const LikeCounter = ecs.registerComponent({
+  name: 'LikeCounter',
+  schema: {
+    likes: ecs.i32,  // Integer to store the number of likes
+  },
+  schemaDefaults: {
+    likes: 0,  // Default to 0 likes
+  },
+})
+
 // List of components to clone
 const componentsForClone = [
   ecs.Position, ecs.Quaternion, ecs.Scale, ecs.Shadow, ecs.BoxGeometry, ecs.Material,
@@ -51,6 +62,8 @@ const cloneEntityWithChildren = (sourceEid, world) => {
     }
 
     const targetEid = world.createEntity()
+
+    LikeCounter.set(world, targetEid, {likes: 0})
 
     // Clone components
     componentsForClone.forEach((component) => {
@@ -129,31 +142,43 @@ const removeEntity = (entityEid, world) => {
 const likeEntity = (entityEid, world) => {
   try {
     if (ecs.Position.has(world, entityEid)) {
-      try {
-        const children = Array.from(world.getChildren(entityEid))
-        if (children.length > 1) {
-          ecs.Ui.set(world, children[0], {
-            type: '3d',
-            fontSize: 55,
-            borderWidth: 0,
-            borderRadius: 50,
-            color: '#000000',
-            background: '#FFFFFF',
-            backgroundOpacity: 1,
-            text: '1',
-            textAlign: 'center',
-          })
-        } else {
-          console.warn('⚠️ No children found for entity:', entityEid)
+      const children = Array.from(world.getChildren(entityEid))
+
+      if (children.length > 1) {
+        // Check if the entity has the LikeCounter component
+        if (!LikeCounter.has(world, entityEid)) {
+          // If not, add it with an initial like count of 0
+          LikeCounter.set(world, entityEid, {likes: 0})
         }
-      } catch (error) {
-        console.error('🚨 Error updating child text:', error)
+
+        // Increment the like count
+        const currentLikes = LikeCounter.get(world, entityEid).likes + 1
+
+        // Update the LikeCounter component with the new like count
+        LikeCounter.set(world, entityEid, {likes: currentLikes})
+
+        // Update the UI text with the new like count
+        ecs.Ui.set(world, children[0], {
+          type: '3d',
+          fontSize: 55,
+          borderWidth: 0,
+          borderRadius: 50,
+          color: '#000000',
+          background: '#FFFFFF',
+          backgroundOpacity: 1,
+          text: currentLikes.toString(),  // Convert to string for display
+          textAlign: 'center',
+        })
+
+        console.log(`👍 Entity ${entityEid} now has ${currentLikes} likes`)
+      } else {
+        console.warn('⚠️ No children found for entity:', entityEid)
       }
     } else {
-      console.warn('⚠️ Tried to remove a non-existing entity:', entityEid)
+      console.warn('⚠️ Tried to like a non-existing entity:', entityEid)
     }
   } catch (error) {
-    console.error('🚨 Error removing entity:', error)
+    console.error('🚨 Error updating like count:', error)
   }
 }
 
