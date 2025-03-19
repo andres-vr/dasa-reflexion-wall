@@ -1,6 +1,7 @@
 import * as ecs from '@8thwall/ecs'
 
 let deleteMode = false  // Track whether delete mode is active
+let likeMode = false
 
 // List of components to clone
 const componentsForClone = [
@@ -14,13 +15,24 @@ const componentsForClone = [
 const updateChildText = (parentEntityEid, world, newText) => {
   try {
     const children = Array.from(world.getChildren(parentEntityEid))
-    if (children.length > 0) {
+    if (children.length > 1) {
+      ecs.Ui.set(world, children[1], {
+        type: '3d',
+        fontSize: 20,
+        borderColor: '#000000',
+        borderWidth: 1,
+        text: newText,
+      })
       ecs.Ui.set(world, children[0], {
         type: '3d',
-        text: newText,
-        fontSize: 20,
-        borderWidth: 1,
-        borderColor: '#000000',
+        fontSize: 55,
+        borderWidth: 0,
+        borderRadius: 50,
+        color: '#000000',
+        background: '#FFFFFF',
+        backgroundOpacity: 0,
+        text: '',
+        textAlign: 'center',
       })
     } else {
       console.warn('⚠️ No children found for entity:', parentEntityEid)
@@ -76,7 +88,7 @@ const createTextInput = (callback) => {
     input.type = 'text'
     input.placeholder = 'Enter your text...'
     input.style.position = 'absolute'
-    input.style.bottom = '5%'
+    input.style.bottom = '10%'
     input.style.left = '50%'
     input.style.transform = 'translate(-50%, -50%)'
     input.style.padding = '10px'
@@ -114,12 +126,43 @@ const removeEntity = (entityEid, world) => {
   }
 }
 
+const likeEntity = (entityEid, world) => {
+  try {
+    if (ecs.Position.has(world, entityEid)) {
+      try {
+        const children = Array.from(world.getChildren(entityEid))
+        if (children.length > 1) {
+          ecs.Ui.set(world, children[0], {
+            type: '3d',
+            fontSize: 55,
+            borderWidth: 0,
+            borderRadius: 50,
+            color: '#000000',
+            background: '#FFFFFF',
+            backgroundOpacity: 1,
+            text: '1',
+            textAlign: 'center',
+          })
+        } else {
+          console.warn('⚠️ No children found for entity:', entityEid)
+        }
+      } catch (error) {
+        console.error('🚨 Error updating child text:', error)
+      }
+    } else {
+      console.warn('⚠️ Tried to remove a non-existing entity:', entityEid)
+    }
+  } catch (error) {
+    console.error('🚨 Error removing entity:', error)
+  }
+}
+
 const createDeleteButton = () => {
   const button = document.createElement('button')
   button.innerHTML = '🗑️'  // Trash emoji
   button.style.position = 'absolute'
   button.style.bottom = '20px'
-  button.style.right = '100px'
+  button.style.right = '35%'
   button.style.width = '50px'
   button.style.height = '50px'
   button.style.border = 'none'
@@ -141,12 +184,39 @@ const createDeleteButton = () => {
   })
 }
 
+const createLikeButton = () => {
+  const button = document.createElement('button')
+  button.innerHTML = '👍'  // Trash emoji
+  button.style.position = 'absolute'
+  button.style.bottom = '20px'
+  button.style.right = '20%'
+  button.style.width = '50px'
+  button.style.height = '50px'
+  button.style.border = 'none'
+  button.style.backgroundColor = 'white'  // Default background
+  button.style.borderRadius = '50%'
+  button.style.boxShadow = '0px 4px 6px rgba(0, 0, 0, 0.2)'
+  button.style.fontSize = '24px'
+  button.style.cursor = 'pointer'
+  button.style.zIndex = '1000'
+  button.style.transition = 'background-color 0.3s ease, transform 0.2s ease-in-out'
+
+  document.body.appendChild(button)
+
+  button.addEventListener('click', () => {
+    likeMode = !likeMode
+    button.style.backgroundColor = likeMode ? 'blue' : 'white'  // Fix: Directly update button background
+    button.style.color = likeMode ? 'white' : 'black'  // Optional: Change icon color
+    button.style.transform = likeMode ? 'scale(1.2)' : 'scale(1)'
+  })
+}
+
 const createInfoButton = () => {
   const button = document.createElement('button')
   button.innerHTML = 'ℹ️'  // Info icon
   button.style.position = 'absolute'
   button.style.bottom = '20px'
-  button.style.right = '20px'
+  button.style.right = '5%'
   button.style.width = '50px'
   button.style.height = '50px'
   button.style.border = 'none'
@@ -164,33 +234,6 @@ const createInfoButton = () => {
   document.body.appendChild(button)
 }
 
-// Create the delete button in the top-left corner
-// const createDeleteButton = () => {
-//   const button = document.createElement('button')
-//   button.innerText = 'Delete Mode: OFF'
-//   button.style.position = 'absolute'
-//   button.style.top = '10px'
-//   button.style.left = '10px'
-//   button.style.padding = '10px'
-//   button.style.fontSize = '14px'
-//   button.style.backgroundColor = 'red'
-//   button.style.color = 'white'
-//   button.style.border = 'none'
-//   button.style.borderRadius = '5px'
-//   button.style.cursor = 'pointer'
-//   button.style.zIndex = '1000'
-
-//   document.body.appendChild(button)
-
-//   button.addEventListener('click', () => {
-//     deleteMode = !deleteMode
-//     button.innerText = `Delete Mode: ${deleteMode ? 'ON' : 'OFF'}`
-//     button.style.backgroundColor = deleteMode ? 'darkred' : 'red'
-//   })
-// }
-
-createDeleteButton()  // Call this once at the start to create the button
-
 // 1) Register the custom component, store the return value in a variable
 const StickyNoteTapDelete = ecs.registerComponent({
   name: 'StickyNoteTapDelete',
@@ -201,6 +244,8 @@ const StickyNoteTapDelete = ecs.registerComponent({
       .listen(eid, ecs.input.SCREEN_TOUCH_START, (e) => {
         if (deleteMode) {
           removeEntity(eid, world)
+        } else if (likeMode) {
+          likeEntity(eid, world)
         }
       })
   },
@@ -231,6 +276,8 @@ ecs.registerComponent({
           ecs.Disabled.set(world, entityToSpawn, {})
         }
         createInfoButton()
+        createDeleteButton()
+        createLikeButton()
       })
       .listen(eid, ecs.input.SCREEN_TOUCH_START, async (e) => {
         try {
