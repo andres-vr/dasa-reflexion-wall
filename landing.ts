@@ -1,4 +1,4 @@
-const screen = (html) => {
+export const screen = () => {
   let startScreen = document.getElementById('startScreen')
 
   // Remove existing screen if it exists
@@ -54,7 +54,3 @@ const screen = (html) => {
 
   document.getElementById('dismissBtn').addEventListener('click', onClick)
 }
-
-const html = ''
-
-export {screen, html}
